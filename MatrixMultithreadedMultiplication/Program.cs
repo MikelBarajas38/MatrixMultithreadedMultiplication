@@ -9,7 +9,7 @@ public class Program
     private static List<List<double>> B = new List<List<double>>();
     private static List<List<double>> C = new List<List<double>>();
 
-    private static readonly object matrixLock = new object();
+    // private static readonly object matrixLock = new object();
 
     public static void computeCell(object coords)
     {
@@ -17,15 +17,13 @@ public class Program
         double total = 0;
         int n = A[0].Count;
 
-        lock (matrixLock)
+        for (int i = 0; i < n; i++)
         {
-            for (int i = 0; i < n; i++)
-            {
-                total += A[row][i] * B[i][column];
-            }
-
-            C[row][column] = total;
+            total += A[row][i] * B[i][column];
         }
+
+        C[row][column] = total;
+
     }
     public static void generateRandomMatrix(List<List<double>> M, int size)
     {
@@ -38,6 +36,20 @@ public class Program
             for (int j = 0; j < size; j++)
             {
                 M[i].Add(random.NextDouble() * 100);
+            }
+        }
+    }
+    public static void generateOnesMatrix(List<List<double>> M, int size)
+    {
+        M.Clear();
+        Random random = new Random();
+
+        for (int i = 0; i < size; i++)
+        {
+            M.Add(new List<double>());
+            for (int j = 0; j < size; j++)
+            {
+                M[i].Add(1);
             }
         }
     }
@@ -57,15 +69,55 @@ public class Program
         }
     }
 
+    public static void printMatrix(List<List<double>> M)
+    {
+        for (int i = 0; i < M.Count; i++)
+        {
+            for (int j = 0; j < M[i].Count; j++)
+            {
+                Console.Write($"{M[i][j]} ");
+            }
+            Console.WriteLine();
+        }
+        Console.WriteLine();
+    }
+
     public static void mmultSecuential()
     {
         for (int i = 0; i < C.Count; i++)
         {
             for (int j = 0; j < C[i].Count; j++)
             {
-                (int, int) coords = (i, j);
-                computeCell(coords);
+                computeCell((i,j));
             }
+        }
+    }
+    public static void mmultMultithreaded2()
+    {
+        int chunkSize = 10; // Experiment with different chunk sizes
+        int totalCells = C.Count * C[0].Count;
+
+        for (int chunkStart = 0; chunkStart < totalCells; chunkStart += chunkSize)
+        {
+            int chunkEnd = Math.Min(chunkStart + chunkSize, totalCells);
+
+            ManualResetEvent[] doneEvents = new ManualResetEvent[chunkEnd - chunkStart];
+
+            for (int i = chunkStart; i < chunkEnd; i++)
+            {
+                int row = i / C[0].Count;
+                int column = i % C[0].Count;
+
+                doneEvents[i - chunkStart] = new ManualResetEvent(false);
+
+                ThreadPool.QueueUserWorkItem((state) =>
+                {
+                    computeCell((row, column));
+                    doneEvents[(int)state].Set();
+                }, i - chunkStart);
+            }
+
+            WaitHandle.WaitAll(doneEvents);
         }
     }
 
@@ -77,13 +129,10 @@ public class Program
         {
             for (int j = 0; j < C[i].Count; j++)
             {
-                (int, int) coords = (i, j);
-
                 ParameterizedThreadStart startHilo = new ParameterizedThreadStart(computeCell);
                 Thread hilo = new Thread(startHilo);
                 threads.Add(hilo);
-
-                hilo.Start(coords);
+                hilo.Start((i, j));
             }
         }
 
@@ -96,8 +145,18 @@ public class Program
 
     public static void Main()
     {
+        generateOnesMatrix(A, 5);
+        generateOnesMatrix(B, 5);
+        generateZeroesMatrix(C, 5);
+
+        printMatrix(A);
+        printMatrix(B);
+
+        mmultMultithreaded();
+        printMatrix(C);
+
         int start = 10;
-        int end = 100;
+        int end = 10000;
 
         for (int i = start; i <= end; i *= 10)
         {
@@ -118,7 +177,7 @@ public class Program
             mmultMultithreaded();
             stopWatch.Stop();
 
-            Console.WriteLine($"Time taken in sequential: {stopWatch.Elapsed.TotalMilliseconds}ms\n");
+            Console.WriteLine($"Time taken in multithreaded: {stopWatch.Elapsed.TotalMilliseconds}ms\n");
 
         }
     }
